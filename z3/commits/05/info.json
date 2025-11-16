@@ -1,0 +1,4 @@
+{
+  "source": "src/parsers/smt2/smt2parser.cpp",
+  "commit": "31c91e167425989476829d36fe3f9329cadb84d0"
+}

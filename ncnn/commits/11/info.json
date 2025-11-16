@@ -1,0 +1,4 @@
+{
+  "source": "src/layer/convolutiondepthwise1d.cpp",
+  "commit": "84256b1494227300378b12356046cc2c68acf705"
+}

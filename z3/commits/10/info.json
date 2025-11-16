@@ -1,0 +1,4 @@
+{
+  "source": "src/ast/rewriter/arith_rewriter.cpp",
+  "commit": "696b70fddbf5017f3c883f9d874ba78ff1e71da7"
+}

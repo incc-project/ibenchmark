@@ -1,0 +1,4 @@
+{
+  "source": "modules/dnn/src/layers/einsum_layer.cpp",
+  "commit": "e5b871fa7ea391169d7ca2be0e30f6a25535750c"
+}

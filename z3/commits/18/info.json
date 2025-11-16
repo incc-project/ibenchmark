@@ -1,0 +1,4 @@
+{
+  "source": "src/tactic/arith/purify_arith_tactic.cpp",
+  "commit": "33c35b0c316cc9da3a3bb14e56d1cbb18d0961e8"
+}

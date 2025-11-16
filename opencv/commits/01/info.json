@@ -1,0 +1,4 @@
+{
+  "source": "modules/imgproc/src/resize.cpp",
+  "commit": "fd62bd0991e24fb9c71b84c0a873479e6eaed650"
+}

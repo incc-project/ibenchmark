@@ -1,0 +1,4 @@
+{
+  "source": "modules/dnn/src/layers/recurrent_layers.cpp",
+  "commit": "efc9837df186356704583768ab85f3e328ac1b01"
+}

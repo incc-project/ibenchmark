@@ -1,0 +1,4 @@
+{
+  "source": "clang/lib/AST/ASTContext.cpp",
+  "commit": "5518a9d7673bfe55b4110bea049140316d032fbf"
+}

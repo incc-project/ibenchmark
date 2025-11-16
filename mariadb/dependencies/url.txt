@@ -1,0 +1,4 @@
+https://github.com/mariadb-corporation/wsrep-lib/archive/14ce8cab76e9388f7266b91b163a62c654b1d329.zip
+https://github.com/mariadb-corporation/wsrep-API/archive/65608d3f503ba9f4c170fc4e01c539be9fafd46c.zip
+https://github.com/mariadb-corporation/mariadb-connector-c/archive/46880b003653a000e9588bd73c8b1dd65088c686.zip
+https://github.com/wolfSSL/wolfssl/archive/b077c81eb635392e694ccedbab8b644297ec0285.zip

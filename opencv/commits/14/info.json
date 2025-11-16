@@ -1,0 +1,4 @@
+{
+  "source": "modules/objdetect/src/aruco/apriltag/apriltag_quad_thresh.cpp",
+  "commit": "638c575c73d8380fbc784b7cea804d86410d3677"
+}
