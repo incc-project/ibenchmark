@@ -54,12 +54,11 @@ make -j 64
 make install
 ```
 
-(4) Download test projects and init.
+(4) Download test projects.
 
 ```
 cd ibenchmark
 python3 ./ibenchmark.py download all
-python3 ./ibenchmark.py init all
 ```
 
 # Testing
