@@ -1,7 +1,6 @@
 import argparse
 import os
 import subprocess
-from asyncio import as_completed
 from contextlib import contextmanager
 from typing import Callable
 import shlex
@@ -13,6 +12,7 @@ import json
 from dataclasses import dataclass
 from typing import Any, Dict
 from concurrent.futures import ThreadPoolExecutor
+import difflib
 
 
 # ==================== Config Begin ====================
@@ -236,6 +236,32 @@ def files_equal(path1: str, path2: str) -> bool:
         return f1.read() == f2.read()
 
 
+def diff_line_numbers(old_path: str, new_path: str):
+    with open(old_path, "r", encoding="utf-8") as f:
+        old_lines = f.read().splitlines()
+
+    with open(new_path, "r", encoding="utf-8") as f:
+        new_lines = f.read().splitlines()
+
+    sm = difflib.SequenceMatcher(a=old_lines, b=new_lines)
+
+    deleted_lines = []
+    added_lines = []
+
+    for tag, i1, i2, j1, j2 in sm.get_opcodes():
+        if tag == "delete":
+            deleted_lines.extend(range(i1 + 1, i2 + 1))
+
+        elif tag == "insert":
+            added_lines.extend(range(j1 + 1, j2 + 1))
+
+        elif tag == "replace":
+            deleted_lines.extend(range(i1 + 1, i2 + 1))
+            added_lines.extend(range(j1 + 1, j2 + 1))
+
+    return deleted_lines, added_lines
+
+
 # ==================== Utils End ====================
 
 
@@ -419,6 +445,14 @@ def fast_compile_commit(project_info: ProjectInfo, commit_dir: str, is_new: bool
 
     run_command(command_args)
 
+    # Backup
+    if os.path.exists(output_path):
+        shutil.copyfile(output_path, os.path.join(commit_dir, args.old_or_new + ".o"))
+    if os.path.exists(output_path + ".iclang"):
+        iclang_dir = os.path.join(commit_dir, args.old_or_new + ".o.iclang")
+        shutil.rmtree(iclang_dir, ignore_errors=True)
+        shutil.copytree(output_path + ".iclang", iclang_dir)
+
     print(f"Compile {project_info.name} {commit_dir} Done")
 
     return True
@@ -509,6 +543,24 @@ def handle_project(project_name: str, handle_funcs: list[Callable[[ProjectInfo, 
             handle_func(info, args)
 
 
+def diff_project_commit(project_info: ProjectInfo, commit_dir: str):
+    print("hello")
+    deleted_lines, added_lines = diff_line_numbers(os.path.join(commit_dir, "old.cpp"), os.path.join(commit_dir, "new.cpp"))
+    print(deleted_lines)
+    print(added_lines)
+    return True
+
+
+def diff_project_commits(project_info: ProjectInfo, args: argparse.Namespace):
+    if args.commit_name == "all":
+        for commit_name in sorted(os.listdir("commits")):
+            commit_dir = os.path.join("commits", commit_name)
+            if os.path.isdir(commit_dir):
+                diff_project_commit(project_info, commit_dir)
+    else:
+        diff_project_commit(project_info, os.path.join("commits", args.commit_name))
+
+
 def cmd_list(args):
     for info in project_infos.values():
         print(info.name)
@@ -561,6 +613,11 @@ def cmd_build_commits(args):
     handle_project(args.project, [build_project_commits], args)
     print("Total commit num:", global_state.total_task_num)
     print("Skip commit num:", global_state.skip_task_num)
+
+
+@timeit
+def cmd_diff_commits(args):
+    handle_project(args.project, [diff_project_commits], args)
 
 
 # ==================== Cmd End ====================
@@ -634,7 +691,18 @@ def main():
                                                                             "throw an exception instead of skipping")
     build_commits_parser.add_argument("--fast", action="store_true", help="When fast mode is enabled, "
                                      "we do not build the src, but compile it directly to commits/commit_name/fast.o "
-                                     "according to compile_commands.json. Ignore --test.")
+                                     "according to compile_commands.json. After compilation, we will backup fast.o to "
+                                     "old.o/new.o and backup fast.o.iclang to old.o.iclang/new.o.iclang. Ignore --test.")
+
+    # Diff-commits
+    diff_parser = subparsers.add_parser("diff-commits",
+                                        help="Diff commits, show changed functions, classes, templates, "
+                                             "You should use build-commits fast mode + IClang SourceRangeCheckMode to"
+                                             "generate old.o.iclang and new.o.iclang first.")
+    diff_parser.add_argument("project", help="Project under list or 'all'")
+    diff_parser.add_argument("commit_name", help="Commit name under commits (e.g., 01, 02, 03, ...) "
+                                                          "under project/commits or 'all'")
+    diff_parser.set_defaults(func=cmd_diff_commits)
 
     build_commits_parser.set_defaults(func=cmd_build_commits)
 
