@@ -272,6 +272,7 @@ class GlobalState:
     def __init__(self):
         self.total_task_num = 0
         self.skip_task_num = 0
+        self.gMap: dict[str,  Any] = {}
 
 
 global_state : GlobalState = GlobalState()
@@ -527,6 +528,122 @@ def build_project_commits(project_info: ProjectInfo, args: argparse.Namespace):
         test_project(project_info, args)
 
 
+def mark_line_info(line_infos: list[str], src_lines: list[str], decl_type: str,
+                   start_line: int, start_column: int, end_line: int, end_column: int, src_path: str):
+    if start_column-1 > 0 and not src_lines[start_line-1][:start_column-1].isspace():
+        start_line += 1
+    if end_column < len(src_lines[end_line-1]) and not src_lines[end_line-1][end_column:].isspace():
+        end_line -= 1
+    for i in range(start_line-1, end_line):
+        line_info = line_infos[i]
+        if line_info == "space" or line_info == "comment":
+            continue
+        if line_info == "other" or (line_info == "class" and "function" in decl_type):
+            line_infos[i] = decl_type
+        else:
+            raise ValueError(f"Conflict line info in {os.path.abspath(src_path)}: line {i+1}, prev: {line_infos[i]}, cur: {decl_type}")
+
+
+def has_invalid_tag(tags: str, invalid_tags: list[str]) -> bool:
+    for elem in invalid_tags:
+        if elem in tags:
+            return True
+        if elem == "all" and tags != "":
+            return True
+    return False
+
+
+def get_line_infos(src_path: str, compile_json_path: str, invalid_tags: list[str]) -> list[str]:
+    with open(src_path, 'r', encoding='utf-8') as f:
+        src_lines = f.readlines()
+
+    # Start from 0.
+    line_infos : list[str] = ["other"] * (len(src_lines))
+
+    # Mark space and comment
+    for i, content in enumerate(src_lines):
+        fmt_content = content.strip()
+        if fmt_content == "":
+            line_infos[i] = "space"
+        elif fmt_content[0] == '/':
+            line_infos[i] = "comment"
+
+    with open(compile_json_path, 'r', encoding='utf-8') as f:
+        data = json.load(f)
+
+    for idx, item in enumerate(data['declInfos']):
+        decl_type = item['type']
+        start_line = item['startLine']
+        start_column = item['startColumn']
+        end_line = item['endLine']
+        end_column = item['endColumn']
+        if decl_type == 'function' or decl_type == 'class' or decl_type == 'template':
+            if decl_type == 'function' and (item['mangledName'] == "" or has_invalid_tag(item['tags'], invalid_tags)):
+                mark_line_info(line_infos, src_lines, "function-invalid"+item['tags'], start_line, start_column, end_line,
+                               end_column, src_path)
+            else:
+                mark_line_info(line_infos, src_lines, decl_type, start_line, start_column, end_line, end_column,
+                               src_path)
+        else:
+            raise ValueError(f"Invalid decl type: {decl_type}")
+
+    # for i, content in enumerate(line_infos):
+    #     print(i+1, content)
+
+    return line_infos
+
+
+def diff_project_commit(project_info: ProjectInfo, commit_dir: str):
+    old_cpp_path = os.path.join(commit_dir, "old.cpp")
+    new_cpp_path = os.path.join(commit_dir, "new.cpp")
+    old_compile_json_path = os.path.join(commit_dir, "old.o.iclang", "compile.json")
+    new_compile_json_path = os.path.join(commit_dir, "new.o.iclang", "compile.json")
+    deleted_lines, added_lines = diff_line_numbers(old_cpp_path, new_cpp_path)
+    old_line_infos = get_line_infos(old_cpp_path, old_compile_json_path, ["special-attr"])
+    new_line_infos = get_line_infos(new_cpp_path, new_compile_json_path, ["special-attr"])
+    res: dict[str, tuple[int, int]] = {}
+    for line in deleted_lines:
+        key = old_line_infos[line - 1]
+        old = res.get(key, (0, 0))
+        res[key] = (old[0] + 1, old[1])
+    for line in added_lines:
+        key = new_line_infos[line - 1]
+        old = res.get(key, (0, 0))
+        res[key] = (old[0], old[1] + 1)
+    global_state.gMap[os.path.abspath(commit_dir)] = res
+    return True
+
+
+def diff_project_commits(project_info: ProjectInfo, args: argparse.Namespace):
+    if args.commit_name == "all":
+        for commit_name in sorted(os.listdir("commits")):
+            commit_dir = os.path.join("commits", commit_name)
+            if os.path.isdir(commit_dir):
+                diff_project_commit(project_info, commit_dir)
+    else:
+        diff_project_commit(project_info, os.path.join("commits", args.commit_name))
+
+
+def funcx_sta_commit(project_info: ProjectInfo, commit_dir: str):
+    new_cpp_path = os.path.join(commit_dir, "new.cpp")
+    new_compile_json_path = os.path.join(commit_dir, "new.o.iclang", "compile.json")
+    new_line_infos = get_line_infos(new_cpp_path, new_compile_json_path, ["all"])
+    res: dict[str, int] = {}
+    for line_info in new_line_infos:
+        res[line_info] = res.get(line_info, 0) + 1
+    global_state.gMap[os.path.abspath(commit_dir)] = res
+
+
+def funcx_sta_commits(project_info: ProjectInfo, args: argparse.Namespace):
+    if args.commit_name == "all":
+        for commit_name in sorted(os.listdir("commits")):
+            commit_dir = os.path.join("commits", commit_name)
+            if os.path.isdir(commit_dir):
+                funcx_sta_commit(project_info, commit_dir)
+    else:
+        funcx_sta_commit(project_info, os.path.join("commits", args.commit_name))
+
+
 def handle_project(project_name: str, handle_funcs: list[Callable[[ProjectInfo, argparse.Namespace], None]],
                    args: argparse.Namespace):
     if project_name == "all":
@@ -541,24 +658,6 @@ def handle_project(project_name: str, handle_funcs: list[Callable[[ProjectInfo, 
         info = project_infos[project_name]
         for handle_func in handle_funcs:
             handle_func(info, args)
-
-
-def diff_project_commit(project_info: ProjectInfo, commit_dir: str):
-    print("hello")
-    deleted_lines, added_lines = diff_line_numbers(os.path.join(commit_dir, "old.cpp"), os.path.join(commit_dir, "new.cpp"))
-    print(deleted_lines)
-    print(added_lines)
-    return True
-
-
-def diff_project_commits(project_info: ProjectInfo, args: argparse.Namespace):
-    if args.commit_name == "all":
-        for commit_name in sorted(os.listdir("commits")):
-            commit_dir = os.path.join("commits", commit_name)
-            if os.path.isdir(commit_dir):
-                diff_project_commit(project_info, commit_dir)
-    else:
-        diff_project_commit(project_info, os.path.join("commits", args.commit_name))
 
 
 def cmd_list(args):
@@ -618,7 +717,55 @@ def cmd_build_commits(args):
 @timeit
 def cmd_diff_commits(args):
     handle_project(args.project, [diff_project_commits], args)
+    res: dict[str, int] = {}
+    valid_num = 0
+    for prefix, diff_map in global_state.gMap.items():
 
+        print(prefix, end="")
+        for key, value in diff_map.items():
+            print(f" ({key} change: -{value[0]}, +{value[1]})", end="")
+        print()
+
+        valid_flag = True
+        for decl_type in diff_map.keys():
+            res[decl_type] = res.get(decl_type, 0) + 1
+
+            if decl_type != "function" and decl_type != "space" and decl_type != "comment":
+                valid_flag = False
+        if valid_flag:
+            valid_num += 1
+
+    print("==================== Summary ====================")
+    for key, value in res.items():
+        print(f"{key} change: {value} commits")
+
+    print(f"Valid: {valid_num} commits")
+    print("========================================")
+
+
+@timeit
+def cmd_funcx_sta_commits(args):
+    handle_project(args.project, [funcx_sta_commits], args)
+    res: dict[str, int] = {}
+    total_lines = 0
+    for prefix, sta_map in global_state.gMap.items():
+
+        cur_total_lines = 0
+        for value in sta_map.values():
+            cur_total_lines += value
+        total_lines += cur_total_lines
+
+        print(prefix, f"total lines: {cur_total_lines}", end="")
+        for key, value in sta_map.items():
+            print(f" ({key}: {value}, {100.0*value/cur_total_lines:.1f}%)", end="")
+            res[key] = res.get(key, 0) + value
+        print()
+
+    print("==================== Summary ====================")
+    print(f"total lines: {total_lines}")
+    for key, value in res.items():
+        print(f"{key}: {value}, {100.0*value/total_lines:.1f}%")
+    print("========================================")
 
 # ==================== Cmd End ====================
 
@@ -627,47 +774,47 @@ def main():
     parser = argparse.ArgumentParser(prog="ibenchmark", description="IBenchmark manager")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    # List
+    # list
     list_parser = subparsers.add_parser("list", help="List all projects in IBenchmark")
     list_parser.set_defaults(func=cmd_list)
 
-    # Download
+    # download
     download_parser = subparsers.add_parser("download", help="Download project source code")
     download_parser.add_argument("project", help="Project under list or 'all'")
     download_parser.set_defaults(func=cmd_download)
 
-    # Init
+    # init
     init_parser = subparsers.add_parser("init", help="rm -rf src, unzip src.zip to src")
     init_parser.add_argument("project", help="Project under list or 'all'")
     init_parser.set_defaults(func=cmd_init)
 
-    # Config
+    # config
     config_parser = subparsers.add_parser("config", help="CMake config project")
     config_parser.add_argument("project", help="Project under list or 'all'")
     config_parser.add_argument("--re", action="store_true", help="Auto init")
     config_parser.set_defaults(func=cmd_config)
 
-    # Build
+    # build
     build_parser = subparsers.add_parser("build", help="Build project")
     build_parser.add_argument("project", help="Project under list or 'all'")
     build_parser.add_argument("-j", type=int, help="Parallel jobs")
     build_parser.add_argument("--re", action="store_true", help="Auto init + config")
     build_parser.set_defaults(func=cmd_build)
 
-    # Test
+    # test
     test_parser = subparsers.add_parser("test", help="Test project")
     test_parser.add_argument("project", help="Project under list or 'all'")
     test_parser.add_argument("-j", type=int, help="Parallel jobs")
     test_parser.add_argument("--re", action="store_true", help="Auto init + config + build")
     test_parser.set_defaults(func=cmd_test)
 
-    # Init-commits
+    # init-commits
     init_commits_parser = subparsers.add_parser("init-commits", help="rm -rf *.o, *.tmp, *.iclang, *.iclangtmp "
                                                                      "under project/commits/*/, automatically executed during init / config")
     init_commits_parser.add_argument("project", help="Project under list or 'all'")
     init_commits_parser.set_defaults(func=cmd_init_commits)
 
-    # Build-commits
+    # build-commits
     build_commits_parser = subparsers.add_parser("build-commits",
                                                  help="Build one or all commits under project/commits. "
                                                       "You can choose to build old or new. "
@@ -694,15 +841,25 @@ def main():
                                      "according to compile_commands.json. After compilation, we will backup fast.o to "
                                      "old.o/new.o and backup fast.o.iclang to old.o.iclang/new.o.iclang. Ignore --test.")
 
-    # Diff-commits
+    # diff-commits
     diff_parser = subparsers.add_parser("diff-commits",
-                                        help="Diff commits, show changed functions, classes, templates, "
+                                        help="Diff commits, show changed functions, classes, templates. "
                                              "You should use build-commits fast mode + IClang SourceRangeCheckMode to"
                                              "generate old.o.iclang and new.o.iclang first.")
     diff_parser.add_argument("project", help="Project under list or 'all'")
     diff_parser.add_argument("commit_name", help="Commit name under commits (e.g., 01, 02, 03, ...) "
                                                           "under project/commits or 'all'")
     diff_parser.set_defaults(func=cmd_diff_commits)
+
+    # funcx-sta-commits
+    funcx_sta_commits_parser = subparsers.add_parser("funcx-sta-commits",
+                                        help="Analyze the upper bound of FuncX. "
+                                             "You should use build-commits fast mode + IClang SourceRangeCheckMode to"
+                                             "generate new.o.iclang first.")
+    funcx_sta_commits_parser.add_argument("project", help="Project under list or 'all'")
+    funcx_sta_commits_parser.add_argument("commit_name", help="Commit name under commits (e.g., 01, 02, 03, ...) "
+                                                 "under project/commits or 'all'")
+    funcx_sta_commits_parser.set_defaults(func=cmd_funcx_sta_commits)
 
     build_commits_parser.set_defaults(func=cmd_build_commits)
 
