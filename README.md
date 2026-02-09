@@ -7,7 +7,7 @@ Env: Ubuntu-22.04 docker container.
 (1) Install necessary tools.
 
 ```
-apt intall -y cmake build-essential lld git wget pkg-config zip unzip diff \
+apt install -y cmake build-essential lld git wget pkg-config zip unzip diff \
 python3-pip openjdk-8-jdk libgmp-dev antlr3 libantlr3c-dev cxxtest \
 libgflags-dev libleptonica-dev libicu-dev libpango1.0-dev libcairo2-dev \
 libncurses-dev libgnutls28-dev bison tzdata
