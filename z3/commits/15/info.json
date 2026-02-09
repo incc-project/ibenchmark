@@ -1,4 +1,5 @@
 {
   "source": "src/sat/smt/euf_solver.cpp",
-  "commit": "ea44c110bb5c81d4c190c0c601c5aeafa20f2b91"
+  "commit": "ea44c110bb5c81d4c190c0c601c5aeafa20f2b91",
+  "pchLine": 32
 }

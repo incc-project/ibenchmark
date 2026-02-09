@@ -1,4 +1,5 @@
 {
   "source": "unittest/tablerecog_test.cc",
-  "commit": "453076332971bec71227bc800f245cce052d8316"
+  "commit": "453076332971bec71227bc800f245cce052d8316",
+  "pchLine": 19
 }

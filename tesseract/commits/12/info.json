@@ -1,4 +1,5 @@
 {
   "source": "src/training/unicharset/fileio.cpp",
-  "commit": "6e73a80e1098c3f3bf3e673411ecbe90350358aa"
+  "commit": "6e73a80e1098c3f3bf3e673411ecbe90350358aa",
+  "pchLine": 35
 }

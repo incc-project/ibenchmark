@@ -1,4 +1,5 @@
 {
   "source": "mysys/crc32/crc32c_x86.cc",
-  "commit": "b68c100076ceed77e0260e2906f0944d5f696503"
+  "commit": "b68c100076ceed77e0260e2906f0944d5f696503",
+  "pchLine": 19
 }

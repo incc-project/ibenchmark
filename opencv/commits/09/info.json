@@ -1,4 +1,5 @@
 {
   "source": "modules/calib3d/src/fisheye.cpp",
-  "commit": "8a24d41b54f958cc269edc658b5fa2f2c1ea5086"
+  "commit": "8a24d41b54f958cc269edc658b5fa2f2c1ea5086",
+  "pchLine": 46
 }

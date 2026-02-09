@@ -1,4 +1,5 @@
 {
   "source": "db/compaction/compaction_picker_fifo.cc",
-  "commit": "a7ecbfd5902434b7b5323bfaf21a7d7f7bb94fa5"
+  "commit": "a7ecbfd5902434b7b5323bfaf21a7d7f7bb94fa5",
+  "pchLine": 24
 }

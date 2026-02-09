@@ -1,4 +1,5 @@
 {
   "source": "src/theory/strings/sequences_rewriter.cpp",
-  "commit": "a11084e760f3ddf4e95e9aeabada3c3e66810a99"
+  "commit": "a11084e760f3ddf4e95e9aeabada3c3e66810a99",
+  "pchLine": 28
 }

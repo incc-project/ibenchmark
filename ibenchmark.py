@@ -152,12 +152,14 @@ def init_project_infos():
 class CommitInfo:
     source: str
     commit: str
+    pch_line: int
 
     @staticmethod
     def from_dict(data: Dict[str, Any]) -> "CommitInfo":
         return CommitInfo(
             source=data["source"],
             commit=data["commit"],
+            pch_line=data["pchLine"]
         )
 
 
@@ -282,6 +284,27 @@ def download_project(project_info: ProjectInfo, args: argparse.Namespace):
     download_with_md5_check(project_info.url, "src.zip")
     if project_info.test_data_url != "":
         download_with_md5_check(project_info.test_data_url, "test.zip")
+
+
+def iclang_config_project(project_info: ProjectInfo, args: argparse.Namespace):
+    iclang_mode = args.mode
+    print("IClang config", project_info.name, ":", iclang_mode)
+    for commit_name in sorted(os.listdir("commits")):
+        commit_dir = os.path.join("commits", commit_name)
+        if os.path.isdir(commit_dir):
+            commit_info = load_commit_info(os.path.join(commit_dir, "info.json"))
+            json_data = {
+                "iClangMode": iclang_mode,
+                "whiteList": [
+                    {
+                        "absPath": commit_info.source,
+                        "pchLine": commit_info.pch_line
+                    }
+                ]
+            }
+            json_path = os.path.join(commit_dir, "config.json")
+            with open(json_path, "w", encoding="utf-8") as f:
+                json.dump(json_data, f, indent=2, ensure_ascii=False)
 
 
 def init_commits(project_info: ProjectInfo, args: argparse.Namespace):
@@ -437,6 +460,8 @@ def fast_compile_commit(project_info: ProjectInfo, commit_dir: str, is_new: bool
     if original_output_idx == -1 or original_output_idx >= len(command_args):
         raise ValueError("Error: Can not find valid -o output_path in the compile command")
     command_args[original_output_idx] = output_path
+    # Add IClang config
+    command_args.append("-iclang=" + os.path.abspath(os.path.join(commit_dir, "config.json")) + "")
 
     print(f"Fast compile project: {project_info.name}, commit: {commit_dir}, is_new: {is_new}, command: {shlex.join(command_args)}")
 
@@ -536,8 +561,6 @@ def mark_line_info(line_infos: list[str], src_lines: list[str], decl_type: str,
         end_line -= 1
     for i in range(start_line-1, end_line):
         line_info = line_infos[i]
-        if line_info == "space" or line_info == "comment":
-            continue
         if line_info == "other" or (line_info == "class" and "function" in decl_type):
             line_infos[i] = decl_type
         else:
@@ -553,20 +576,29 @@ def has_invalid_tag(tags: str, invalid_tags: list[str]) -> bool:
     return False
 
 
+def get_directive_name(line: str):
+    s = line.lstrip()
+    if not s.startswith('#'):
+        return ""
+
+    s = s[1:].lstrip()
+
+    name = ''
+    for ch in s:
+        if ch.isalpha():
+            name += ch
+        else:
+            break
+
+    return name if name else ""
+
+
 def get_line_infos(src_path: str, compile_json_path: str, invalid_tags: list[str]) -> list[str]:
     with open(src_path, 'r', encoding='utf-8') as f:
         src_lines = f.readlines()
 
     # Start from 0.
     line_infos : list[str] = ["other"] * (len(src_lines))
-
-    # Mark space and comment
-    for i, content in enumerate(src_lines):
-        fmt_content = content.strip()
-        if fmt_content == "":
-            line_infos[i] = "space"
-        elif fmt_content[0] == '/':
-            line_infos[i] = "comment"
 
     with open(compile_json_path, 'r', encoding='utf-8') as f:
         data = json.load(f)
@@ -578,7 +610,10 @@ def get_line_infos(src_path: str, compile_json_path: str, invalid_tags: list[str
         end_line = item['endLine']
         end_column = item['endColumn']
         if decl_type == 'function' or decl_type == 'class' or decl_type == 'template':
-            if decl_type == 'function' and (item['mangledName'] == "" or has_invalid_tag(item['tags'], invalid_tags)):
+            if decl_type == 'function' and item['funcXed'] == True:
+                mark_line_info(line_infos, src_lines, "function-funcx", start_line, start_column, end_line,
+                               end_column, src_path)
+            elif decl_type == 'function' and (item['mangledName'] == "" or has_invalid_tag(item['tags'], invalid_tags)):
                 mark_line_info(line_infos, src_lines, "function-invalid"+item['tags'], start_line, start_column, end_line,
                                end_column, src_path)
             else:
@@ -586,6 +621,22 @@ def get_line_infos(src_path: str, compile_json_path: str, invalid_tags: list[str
                                src_path)
         else:
             raise ValueError(f"Invalid decl type: {decl_type}")
+
+    first_main_decl_line = data['firstMainDeclLine']
+
+    # Mark space and comment
+    for i, content in enumerate(src_lines):
+        fmt_content = content.strip()
+        if fmt_content == "":
+            line_infos[i] = "space"
+        elif fmt_content[0] == '/':
+            line_infos[i] = "comment"
+
+        directive_name = get_directive_name(fmt_content)
+        if directive_name != "":
+            line_infos[i] = "directive-"+directive_name
+            if i + 1 < first_main_decl_line:
+                line_infos[i] += "-top"
 
     # for i, content in enumerate(line_infos):
     #     print(i+1, content)
@@ -669,6 +720,10 @@ def cmd_list(args):
 def cmd_download(args):
     handle_project(args.project, [download_project], args)
 
+
+@timeit
+def cmd_iclang_config(args):
+    handle_project(args.project, [iclang_config_project], args)
 
 @timeit
 def cmd_init(args):
@@ -783,6 +838,12 @@ def main():
     download_parser.add_argument("project", help="Project under list or 'all'")
     download_parser.set_defaults(func=cmd_download)
 
+    # gen-config
+    iclang_config_parser = subparsers.add_parser("iclang-config", help="gen config.json under project/commits/*/")
+    iclang_config_parser.add_argument("project", help="Project under list or 'all'")
+    iclang_config_parser.add_argument("mode", help="IClang mode")
+    iclang_config_parser.set_defaults(func=cmd_iclang_config)
+
     # init
     init_parser = subparsers.add_parser("init", help="rm -rf src, unzip src.zip to src")
     init_parser.add_argument("project", help="Project under list or 'all'")
@@ -840,6 +901,7 @@ def main():
                                      "we do not build the src, but compile it directly to commits/commit_name/fast.o "
                                      "according to compile_commands.json. After compilation, we will backup fast.o to "
                                      "old.o/new.o and backup fast.o.iclang to old.o.iclang/new.o.iclang. Ignore --test.")
+    build_commits_parser.set_defaults(func=cmd_build_commits)
 
     # diff-commits
     diff_parser = subparsers.add_parser("diff-commits",
@@ -854,14 +916,12 @@ def main():
     # funcx-sta-commits
     funcx_sta_commits_parser = subparsers.add_parser("funcx-sta-commits",
                                         help="Analyze the upper bound of FuncX. "
-                                             "You should use build-commits fast mode + IClang SourceRangeCheckMode to"
+                                             "You should use build-commits fast mode + IClang SourceRangeCheckMode/FuncXCheckMode to"
                                              "generate new.o.iclang first.")
     funcx_sta_commits_parser.add_argument("project", help="Project under list or 'all'")
     funcx_sta_commits_parser.add_argument("commit_name", help="Commit name under commits (e.g., 01, 02, 03, ...) "
                                                  "under project/commits or 'all'")
     funcx_sta_commits_parser.set_defaults(func=cmd_funcx_sta_commits)
-
-    build_commits_parser.set_defaults(func=cmd_build_commits)
 
     args = parser.parse_args()
 

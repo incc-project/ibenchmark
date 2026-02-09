@@ -1,4 +1,5 @@
 {
   "source": "src/layer/requantize.cpp",
-  "commit": "956bccd295a74cf0ef57f284c1ec6e8481879929"
+  "commit": "956bccd295a74cf0ef57f284c1ec6e8481879929",
+  "pchLine": 18
 }

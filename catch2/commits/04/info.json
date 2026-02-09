@@ -1,4 +1,5 @@
 {
   "source": "src/catch2/reporters/catch_reporter_junit.cpp",
-  "commit": "fe483c056d9516d3550519c29fbf14a4d84d06d4"
+  "commit": "fe483c056d9516d3550519c29fbf14a4d84d06d4",
+  "pchLine": 23
 }

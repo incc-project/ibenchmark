@@ -1,4 +1,5 @@
 {
   "source": "modules/objdetect/src/aruco/aruco_detector.cpp",
-  "commit": "46dbc57a865594a5f9141a3a3b6878764df6cc0d"
+  "commit": "46dbc57a865594a5f9141a3a3b6878764df6cc0d",
+  "pchLine": 14
 }

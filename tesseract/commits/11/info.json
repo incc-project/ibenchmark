@@ -1,4 +1,5 @@
 {
   "source": "src/wordrec/wordrec.cpp",
-  "commit": "6be58e54fac0c204e36d68b37599befea90889a5"
+  "commit": "6be58e54fac0c204e36d68b37599befea90889a5",
+  "pchLine": 22
 }

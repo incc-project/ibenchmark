@@ -1,4 +1,5 @@
 {
   "source": "sql/vector_mhnsw.cc",
-  "commit": "1691b0cfaca9fdaff443a4dfc6295a6871acce22"
+  "commit": "1691b0cfaca9fdaff443a4dfc6295a6871acce22",
+  "pchLine": 26
 }

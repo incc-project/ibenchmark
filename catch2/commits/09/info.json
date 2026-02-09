@@ -1,4 +1,5 @@
 {
   "source": "src/catch2/benchmark/detail/catch_analyse.cpp",
-  "commit": "fb51116d5b20ea3fef6c5a89267e7d91856a60cf"
+  "commit": "fb51116d5b20ea3fef6c5a89267e7d91856a60cf",
+  "pchLine": 18
 }

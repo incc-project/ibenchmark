@@ -1,4 +1,5 @@
 {
   "source": "src/qe/qe.cpp",
-  "commit": "3712cbdbfd61237779219c49d06fb69e4d77f852"
+  "commit": "3712cbdbfd61237779219c49d06fb69e4d77f852",
+  "pchLine": 47
 }

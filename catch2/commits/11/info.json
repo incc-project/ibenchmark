@@ -1,4 +1,5 @@
 {
   "source": "src/catch2/internal/catch_enum_values_registry.cpp",
-  "commit": "b593be21160766291bfef7ccb8b1471a4a64abd9"
+  "commit": "b593be21160766291bfef7ccb8b1471a4a64abd9",
+  "pchLine": 12
 }

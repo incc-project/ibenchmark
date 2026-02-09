@@ -1,4 +1,5 @@
 {
   "source": "src/ast/seq_decl_plugin.cpp",
-  "commit": "02d48adae556ca0e472ec19dfc1dab414e2e55b1"
+  "commit": "02d48adae556ca0e472ec19dfc1dab414e2e55b1",
+  "pchLine": 24
 }

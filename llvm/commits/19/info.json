@@ -1,4 +1,5 @@
 {
   "source": "llvm/tools/llvm-objdump/MachODump.cpp",
-  "commit": "586ecdf205aa8b3d162da6f955170a6736656615"
+  "commit": "586ecdf205aa8b3d162da6f955170a6736656615",
+  "pchLine": 55
 }

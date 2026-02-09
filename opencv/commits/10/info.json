@@ -1,4 +1,5 @@
 {
   "source": "modules/objdetect/src/qrcode_encoder.cpp",
-  "commit": "e953fcfaa465a34ee62616dd604bfa0055fb317c"
+  "commit": "e953fcfaa465a34ee62616dd604bfa0055fb317c",
+  "pchLine": 10
 }

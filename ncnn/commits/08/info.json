@@ -1,4 +1,5 @@
 {
   "source": "src/paramdict.cpp",
-  "commit": "39c055d7f2bdcdbd6dcd328eb80e85b16e1405fa"
+  "commit": "39c055d7f2bdcdbd6dcd328eb80e85b16e1405fa",
+  "pchLine": 26
 }

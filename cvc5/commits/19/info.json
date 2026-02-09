@@ -1,4 +1,5 @@
 {
   "source": "src/theory/strings/extf_solver.cpp",
-  "commit": "a71274b992ea5ddfb930b754f1b705f417f7b4e5"
+  "commit": "a71274b992ea5ddfb930b754f1b705f417f7b4e5",
+  "pchLine": 21
 }
