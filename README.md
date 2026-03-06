@@ -12,7 +12,7 @@ python3-pip openjdk-8-jdk libgmp-dev antlr3 libantlr3c-dev cxxtest \
 libgflags-dev libleptonica-dev libicu-dev libpango1.0-dev libcairo2-dev \
 libncurses-dev libgnutls28-dev bison tzdata
 
-pip install toml
+pip install toml pandas openpyxl
 
 apt purge libgtest-dev libgmock-dev
 rm -rf /usr/src/googletest
@@ -54,18 +54,24 @@ make -j 64
 make install
 ```
 
-(4) Download test projects.
+(4) Download and init test projects.
 
 ```
 cd ibenchmark
 python3 ./ibenchmark.py download all
+python3 ./ibenchmark.py init all
 ```
 
 # Testing
 
 ```
 cd ibenchmark
-python3 ./ibenchmark.py build-commits all all new --re --test --restrict -j 64
+python3 ./ibenchmark iclang-init all Inc
+python3 ./ibenchmark change-version all all old
+python3 ./ibenchmark build all --iclang -j 64
+python3 ./ibenchmark change-version all all new
+python3 ./ibenchmark build all --iclang -j 64
+python3 ./ibenchmark test all -j 64
 # -j 64: parallel jobs, depends on your PC
 # Expect no errors and return 0
 ```

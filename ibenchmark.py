@@ -187,6 +187,18 @@ def cd(path):
         os.chdir(old)
 
 
+def timeit(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        start = time.time()
+        result = func(*args, **kwargs)
+        end = time.time()
+        print(f"Execution time: {end - start:.6f} seconds")
+        return result
+
+    return wrapper
+
+
 def run_command(command_args, new_env : dict[str, str] | None = None):
     try:
         env = os.environ.copy()
@@ -221,18 +233,6 @@ def download_with_md5_check(url: str, filepath: str):
     print(f"Download {filepath} done")
 
 
-def timeit(func):
-    @wraps(func)
-    def wrapper(*args, **kwargs):
-        start = time.time()
-        result = func(*args, **kwargs)
-        end = time.time()
-        print(f"Execution time: {end - start:.6f} seconds")
-        return result
-
-    return wrapper
-
-
 def files_equal(path1: str, path2: str) -> bool:
     with open(path1, "rb") as f1, open(path2, "rb") as f2:
         return f1.read() == f2.read()
@@ -264,10 +264,21 @@ def diff_line_numbers(old_path: str, new_path: str):
     return deleted_lines, added_lines
 
 
+# True: new, False: old
+def new_to_bool(content: str) -> bool:
+    is_new = True
+    if content == "old":
+        is_new = False
+    elif content == "new":
+        is_new = True
+    else:
+        raise ValueError(f"Invalid value {content} for old-or-new, only support 'old' or 'new'")
+    return is_new
+
 # ==================== Utils End ====================
 
 
-# ==================== Cmd Begin ====================
+# ==================== Cmd Internal Begin ====================
 
 
 class GlobalState:
@@ -286,40 +297,10 @@ def download_project(project_info: ProjectInfo, args: argparse.Namespace):
         download_with_md5_check(project_info.test_data_url, "test.zip")
 
 
-def iclang_config_project(project_info: ProjectInfo, args: argparse.Namespace):
-    iclang_mode = args.mode
-    print("IClang config", project_info.name, ":", iclang_mode)
-    for commit_name in sorted(os.listdir("commits")):
-        commit_dir = os.path.join("commits", commit_name)
-        if os.path.isdir(commit_dir):
-            commit_info = load_commit_info(os.path.join(commit_dir, "info.json"))
-            json_data = {
-                "iClangMode": iclang_mode,
-                "whiteList": [
-                    {
-                        "absPath": commit_info.source,
-                        "pchLine": commit_info.pch_line
-                    }
-                ]
-            }
-            json_path = os.path.join(commit_dir, "config.json")
-            with open(json_path, "w", encoding="utf-8") as f:
-                json.dump(json_data, f, indent=2, ensure_ascii=False)
-
-
-def init_commits(project_info: ProjectInfo, args: argparse.Namespace):
-    print("Init commits of", project_info.name)
-    run_command(shlex.split("find ./commits -type f -name '*.o' -delete"))
-    run_command(shlex.split("find ./commits -type f -name '*.tmp' -delete"))
-    run_command(shlex.split("find ./commits -type d -name '*.iclang' -exec rm -rf {} +"))
-    run_command(shlex.split("find ./commits -type d -name '*.iclangtmp' -exec rm -rf {} +"))
-
-
 def init_project(project_info: ProjectInfo, args: argparse.Namespace):
     print("Init", project_info.name)
     shutil.rmtree(project_info.filename, ignore_errors=True)
     shutil.rmtree("src", ignore_errors=True)
-    shutil.rmtree("build", ignore_errors=True)
     run_command(["unzip", "-q", "src.zip"])
     shutil.move(project_info.filename, "src")
     if project_info.test_data_filename != "":
@@ -329,17 +310,93 @@ def init_project(project_info: ProjectInfo, args: argparse.Namespace):
         shutil.move(project_info.test_data_filename, "test")
     for command in project_info.init_commands:
         run_command(shlex.split(command))
-    init_commits(project_info, args)
 
-
-def config_project(project_info: ProjectInfo, args: argparse.Namespace):
     cmake_args = "cmake " + project_info.basic_cmake_args + " " + project_info.extra_cmake_args + " " + project_info.cmake_file
     shutil.rmtree("build", ignore_errors=True)
     os.mkdir("build")
     with cd("build"):
         print(cmake_args)
         run_command(shlex.split(cmake_args))
-    init_commits(project_info, args)
+
+
+def iclang_init_project(project_info: ProjectInfo, args: argparse.Namespace):
+    run_command(shlex.split("find ./commits -type f -name '*.o' -delete"))
+    run_command(shlex.split("find ./commits -type f -name '*.tmp' -delete"))
+    run_command(shlex.split("find ./commits -type d -name '*.iclang' -exec rm -rf {} +"))
+    run_command(shlex.split("find ./commits -type d -name '*.iclangtmp' -exec rm -rf {} +"))
+
+    iclang_mode = args.mode
+    print("IClang init", project_info.name, ":", iclang_mode)
+    summary_white_list = []
+    summary_pch_info = []
+    for commit_name in sorted(os.listdir("commits")):
+        commit_dir = os.path.join("commits", commit_name)
+        if os.path.isdir(commit_dir):
+            commit_info = load_commit_info(os.path.join(commit_dir, "info.json"))
+            abs_src_path = os.path.abspath(os.path.join("src", commit_info.source))
+            summary_white_list.append(abs_src_path)
+            summary_pch_info.append({
+                "srcPath": abs_src_path,
+                "pchLine": commit_info.pch_line
+            })
+
+    if args.skippch:
+        summary_pch_info = []
+    summary_json_data = {
+        "iClangMode": iclang_mode,
+        "whiteList": summary_white_list,
+        "pchInfo": summary_pch_info
+    }
+    summary_json_path = os.path.join("commits", "config.json")
+    with open(summary_json_path, "w", encoding="utf-8") as f:
+        json.dump(summary_json_data, f, indent=2, ensure_ascii=False)
+
+
+def change_version_project(project_info: ProjectInfo, args: argparse.Namespace):
+    commits_list = []
+    if args.commit_name == "all":
+        for commit_name in sorted(os.listdir("commits")):
+            commit_dir = os.path.join("commits", commit_name)
+            if not os.path.isdir(commit_dir):
+                continue
+            commits_list.append(commit_dir)
+    else:
+        commits_list.append(os.path.join("commits", args.commit_name))
+
+    is_new = new_to_bool(args.old_or_new)
+    is_strict = args.strict
+
+    for commit_dir in commits_list:
+        info_json_path = os.path.join(commit_dir, "info.json")
+        commit_info = load_commit_info(info_json_path)
+        src_path = os.path.join("src", commit_info.source)
+        old_cpp_path = os.path.join(commit_dir, "old.cpp")
+        new_cpp_path = os.path.join(commit_dir, "new.cpp")
+
+        global_state.total_task_num += 1
+
+        # Check + patch
+        # Do not use copy2, use copyfile, discard metadata!
+        if not is_new: # old
+            if not files_equal(src_path, new_cpp_path):
+                if is_strict:
+                    raise ValueError(f"{src_path} != {new_cpp_path}")
+                else:
+                    global_state.skip_task_num += 1
+                    print(f"{src_path} is already old")
+            else:
+                print(f"Replace {src_path} with {old_cpp_path}")
+                shutil.copyfile(old_cpp_path, src_path)
+        else: # new
+            if not files_equal(src_path, old_cpp_path):
+                if is_strict:
+                    raise ValueError(f"{src_path} != {old_cpp_path}")
+                else:
+                    global_state.skip_task_num += 1
+                    print(f"{src_path} is already new")
+            else:
+                print(f"Replace {src_path} with {new_cpp_path}")
+                shutil.copyfile(new_cpp_path, src_path)
 
 
 def build_project(project_info: ProjectInfo, args: argparse.Namespace):
@@ -376,45 +433,6 @@ def test_project(project_info: ProjectInfo, args: argparse.Namespace):
                 run_command(shlex.split(command), project_info.test_env)
 
 
-def replace_src(project_info: ProjectInfo, commit_dir: str, is_new: bool, strict: bool) -> bool:
-    info_json_path = os.path.join(commit_dir, "info.json")
-    commit_info = load_commit_info(info_json_path)
-    src_path = os.path.join("src", commit_info.source)
-    old_cpp_path = os.path.join(commit_dir, "old.cpp")
-    new_cpp_path = os.path.join(commit_dir, "new.cpp")
-
-    # Check + patch
-    # Do not use copy2, use copyfile, discard metadata!
-    if not is_new:
-        if not files_equal(src_path, new_cpp_path):
-            if strict:
-                raise ValueError(f"{src_path} != {new_cpp_path}")
-            return False
-        print(f"Replace {src_path} with {old_cpp_path}")
-        shutil.copyfile(old_cpp_path, src_path)
-        return True
-    else:
-        if not files_equal(src_path, old_cpp_path):
-            if strict:
-                raise ValueError(f"{src_path} != {old_cpp_path}")
-            return False
-        print(f"Replace {src_path} with {new_cpp_path}")
-        shutil.copyfile(new_cpp_path, src_path)
-        return True
-
-
-def build_project_commit(project_info: ProjectInfo, commit_dir: str, is_new: bool, args: argparse.Namespace) -> bool:
-    print(f"build project: {project_info.name}, commit: {commit_dir}, is_new: {is_new}")
-
-    if not replace_src(project_info, commit_dir, is_new, args.strict):
-        print(f"Skip {project_info.name} {commit_dir}")
-        return False
-
-    # Build
-    build_project(project_info, args)
-    return True
-
-
 def load_compile_file_command_map(compile_commands_json_path: str):
     if not os.path.exists(compile_commands_json_path):
         raise ValueError(f"Error: JSON file does not exist: {compile_commands_json_path}")
@@ -442,8 +460,12 @@ def load_compile_file_command_map(compile_commands_json_path: str):
     return result
 
 
-def fast_compile_commit(project_info: ProjectInfo, commit_dir: str, is_new: bool,
-                        compile_file_command_map : dict[str, str], args: argparse.Namespace) -> bool:
+def fast_build_project_commit(project_info: ProjectInfo, commit_dir: str,
+                        compile_file_command_map : dict[str, str], args: argparse.Namespace):
+    iclang_env = {}
+    if args.iclang:
+        iclang_env["ICLANG"] = os.path.abspath(os.path.join("commits", "config.json"))
+
     info_json_path = os.path.join(commit_dir, "info.json")
     commit_info = load_commit_info(info_json_path)
     src_abs_path = os.path.abspath(os.path.join("src", commit_info.source))
@@ -460,97 +482,37 @@ def fast_compile_commit(project_info: ProjectInfo, commit_dir: str, is_new: bool
     if original_output_idx == -1 or original_output_idx >= len(command_args):
         raise ValueError("Error: Can not find valid -o output_path in the compile command")
     command_args[original_output_idx] = output_path
-    # Add IClang config
-    command_args.append("-iclang=" + os.path.abspath(os.path.join(commit_dir, "config.json")) + "")
 
-    print(f"Fast compile project: {project_info.name}, commit: {commit_dir}, is_new: {is_new}, command: {shlex.join(command_args)}")
+    print(f"Fast compile project: {project_info.name}, commit: {commit_dir}, iclang_env: {iclang_env}, command: {shlex.join(command_args)}")
 
-    if not replace_src(project_info, commit_dir, is_new, args.strict):
-        print(f"Skip {project_info.name} {commit_dir}")
-        return False
-
-    run_command(command_args)
-
-    # Backup
-    if os.path.exists(output_path):
-        shutil.copyfile(output_path, os.path.join(commit_dir, args.old_or_new + ".o"))
-    if os.path.exists(output_path + ".iclang"):
-        iclang_dir = os.path.join(commit_dir, args.old_or_new + ".o.iclang")
-        shutil.rmtree(iclang_dir, ignore_errors=True)
-        shutil.copytree(output_path + ".iclang", iclang_dir)
+    run_command(command_args, iclang_env)
 
     print(f"Compile {project_info.name} {commit_dir} Done")
 
-    return True
 
-
-def build_project_commits(project_info: ProjectInfo, args: argparse.Namespace):
-    is_new = True
-    if args.old_or_new == "old":
-        is_new = False
-    elif args.old_or_new == "new":
-        is_new = True
-    else:
-        raise ValueError(f"Invalid value {args.old_or_new} for old-or-new, only support 'old' or 'new'")
-
-    # Re
-    if args.re:
-        init_project(project_info , args)
-        config_project(project_info, args)
-        if is_new:
-            # Replace src with old.cpp according to commit name.
-            if args.commit_name == "all":
-                for commit_name in sorted(os.listdir("commits")):
-                    commit_dir = os.path.join("commits", commit_name)
-                    if not os.path.isdir(commit_dir):
-                        continue
-                    replace_src(project_info, commit_dir, False, True)
-            else:
-                replace_src(project_info, os.path.join("commits", args.commit_name), False, True)
-        # Do not skip build on --fast because of build generated dependencies.
-        build_project(project_info, args)
-
-    if args.fast:
-        compile_j = 1
-        if args.j:
-            compile_j = args.j
-        futures = []
-        executor = ThreadPoolExecutor(max_workers=compile_j)
-        compile_commands_json_path = os.path.join("build", "compile_commands.json")
-        compile_file_command_map = load_compile_file_command_map(compile_commands_json_path)
-        if args.commit_name == "all":
-            for commit_name in sorted(os.listdir("commits")):
-                commit_dir = os.path.join("commits", commit_name)
-                if os.path.isdir(commit_dir):
-                    global_state.total_task_num += 1
-                    futures.append(executor.submit(fast_compile_commit, project_info, commit_dir, is_new,
-                                                   compile_file_command_map, args))
-        else:
-            global_state.total_task_num += 1
-            futures.append(
-                executor.submit(fast_compile_commit, project_info, os.path.join("commits", args.commit_name),
-                                is_new, compile_file_command_map, args))
-
-        for f in futures:
-            if not f.result():
-                global_state.skip_task_num += 1
-        return
-
+def fast_build_project_commits(project_info: ProjectInfo, args: argparse.Namespace):
+    compile_j = 1
+    if args.j:
+        compile_j = args.j
+    futures = []
+    executor = ThreadPoolExecutor(max_workers=compile_j)
+    compile_commands_json_path = os.path.join("build", "compile_commands.json")
+    compile_file_command_map = load_compile_file_command_map(compile_commands_json_path)
     if args.commit_name == "all":
         for commit_name in sorted(os.listdir("commits")):
             commit_dir = os.path.join("commits", commit_name)
             if os.path.isdir(commit_dir):
-                global_state.total_task_num += 1
-                if not build_project_commit(project_info, commit_dir, is_new, args):
-                    global_state.skip_task_num += 1
+                futures.append(executor.submit(fast_build_project_commit, project_info, commit_dir,
+                                               compile_file_command_map, args))
     else:
-        global_state.total_task_num += 1
-        if not build_project_commit(project_info, os.path.join("commits", args.commit_name), is_new, args):
-            global_state.skip_task_num += 1
+        futures.append(
+            executor.submit(fast_build_project_commit, project_info, os.path.join("commits", args.commit_name),
+                            compile_file_command_map, args))
 
-    # Test
-    if args.test:
-        test_project(project_info, args)
+    for f in futures:
+        f.result()
+
+    return
 
 
 def mark_line_info(line_infos: list[str], src_lines: list[str], decl_type: str,
@@ -695,6 +657,12 @@ def funcx_sta_commits(project_info: ProjectInfo, args: argparse.Namespace):
         funcx_sta_commit(project_info, os.path.join("commits", args.commit_name))
 
 
+# ==================== Cmd Internal End ====================
+
+
+# ==================== Cmd Broadcast Begin ====================
+
+
 def handle_project(project_name: str, handle_funcs: list[Callable[[ProjectInfo, argparse.Namespace], None]],
                    args: argparse.Namespace):
     if project_name == "all":
@@ -711,6 +679,12 @@ def handle_project(project_name: str, handle_funcs: list[Callable[[ProjectInfo, 
             handle_func(info, args)
 
 
+# ==================== Cmd Broadcast End ====================
+
+
+# ==================== Cmd Begin ====================
+
+
 def cmd_list(args):
     for info in project_infos.values():
         print(info.name)
@@ -722,51 +696,34 @@ def cmd_download(args):
 
 
 @timeit
-def cmd_iclang_config(args):
-    handle_project(args.project, [iclang_config_project], args)
-
-@timeit
 def cmd_init(args):
     handle_project(args.project, [init_project], args)
 
 
 @timeit
-def cmd_config(args):
-    re_flag = args.re
-    if re_flag:
-        handle_project(args.project, [init_project, config_project], args)
-    else:
-        handle_project(args.project, [config_project], args)
+def cmd_iclang_init(args):
+    handle_project(args.project, [iclang_init_project], args)
+
+
+def cmd_change_version(args):
+    handle_project(args.project, [change_version_project], args)
+    print("Total commits num:", global_state.total_task_num)
+    print("Skip commits num:", global_state.skip_task_num)
 
 
 @timeit
 def cmd_build(args):
-    re_flag = args.re
-    if re_flag:
-        handle_project(args.project, [init_project, config_project, build_project], args)
-    else:
-        handle_project(args.project, [build_project], args)
+    handle_project(args.project, [build_project], args)
 
 
 @timeit
 def cmd_test(args):
-    re_flag = args.re
-    if re_flag:
-        handle_project(args.project, [init_project, config_project, build_project, test_project], args)
-    else:
-        handle_project(args.project, [test_project], args)
+    handle_project(args.project, [test_project], args)
 
 
 @timeit
-def cmd_init_commits(args):
-    handle_project(args.project, [init_commits], args)
-
-
-@timeit
-def cmd_build_commits(args):
-    handle_project(args.project, [build_project_commits], args)
-    print("Total commit num:", global_state.total_task_num)
-    print("Skip commit num:", global_state.skip_task_num)
+def cmd_fast_build(args):
+    handle_project(args.project, [fast_build_project_commits], args)
 
 
 @timeit
@@ -838,75 +795,68 @@ def main():
     download_parser.add_argument("project", help="Project under list or 'all'")
     download_parser.set_defaults(func=cmd_download)
 
-    # gen-config
-    iclang_config_parser = subparsers.add_parser("iclang-config", help="gen config.json under project/commits/*/")
-    iclang_config_parser.add_argument("project", help="Project under list or 'all'")
-    iclang_config_parser.add_argument("mode", help="IClang mode")
-    iclang_config_parser.set_defaults(func=cmd_iclang_config)
-
     # init
-    init_parser = subparsers.add_parser("init", help="rm -rf src, unzip src.zip to src")
+    init_parser = subparsers.add_parser("init", help="rm -rf src, unzip src.zip to src, "
+                                                     "init test directory if exists, run other init commands, "
+                                                     "init build directory, CMake config project")
     init_parser.add_argument("project", help="Project under list or 'all'")
     init_parser.set_defaults(func=cmd_init)
 
-    # config
-    config_parser = subparsers.add_parser("config", help="CMake config project")
-    config_parser.add_argument("project", help="Project under list or 'all'")
-    config_parser.add_argument("--re", action="store_true", help="Auto init")
-    config_parser.set_defaults(func=cmd_config)
+    # iclang-init
+    iclang_init_parser = subparsers.add_parser("iclang-init", help="gen summary config.json under project/commits "
+                                                                   "according to IClang mode and project/commits/*/info.json"
+                                                                   "rm -rf *.o, *.tmp, *.iclang, *.iclangtmp "
+                                                                   "under project/commits/*/.")
+    iclang_init_parser.add_argument("project", help="Project under list or 'all'")
+    iclang_init_parser.add_argument("mode", help="IClang mode")
+    iclang_init_parser.add_argument("--skippch", action="store_true", help="disable provided pch, test auto pch preamble")
+    iclang_init_parser.set_defaults(func=cmd_iclang_init)
+
+    # change-version
+    change_version_parser = subparsers.add_parser("change-version",
+                                                 help="Replace src with commits/xx/old.cpp or commits/xx/new.cpp."
+                                                      "For old.cpp, the corresponding src should be equal to new,"
+                                                      "For new.cpp, the corresponding src should be equal to old. "
+                                                      "If --strict is enabled, we will throw an exception when "
+                                                      "encountering a mismatch. Otherwise, we just skip it.")
+    change_version_parser.add_argument("project", help="Project under list or 'all'")
+    change_version_parser.add_argument("commit_name", help="Commit name under commits (e.g., 01, 02, 03, ...) "
+                                                          "under project/commits or 'all'")
+    change_version_parser.add_argument("old_or_new", help="'old' / 'new'")
+    change_version_parser.add_argument("--strict", action="store_true", help="When check failed, "
+                                                                            "throw an exception instead of skipping")
+    change_version_parser.set_defaults(func=cmd_change_version)
 
     # build
     build_parser = subparsers.add_parser("build", help="Build project")
     build_parser.add_argument("project", help="Project under list or 'all'")
     build_parser.add_argument("-j", type=int, help="Parallel jobs")
-    build_parser.add_argument("--re", action="store_true", help="Auto init + config")
+    build_parser.add_argument("--iclang", action="store_true", help="Enable IClang, "
+                                                                             "set env ICLANG=(abs)commits/config.json")
     build_parser.set_defaults(func=cmd_build)
 
     # test
     test_parser = subparsers.add_parser("test", help="Test project")
     test_parser.add_argument("project", help="Project under list or 'all'")
     test_parser.add_argument("-j", type=int, help="Parallel jobs")
-    test_parser.add_argument("--re", action="store_true", help="Auto init + config + build")
     test_parser.set_defaults(func=cmd_test)
 
-    # init-commits
-    init_commits_parser = subparsers.add_parser("init-commits", help="rm -rf *.o, *.tmp, *.iclang, *.iclangtmp "
-                                                                     "under project/commits/*/, automatically executed during init / config")
-    init_commits_parser.add_argument("project", help="Project under list or 'all'")
-    init_commits_parser.set_defaults(func=cmd_init_commits)
-
-    # build-commits
-    build_commits_parser = subparsers.add_parser("build-commits",
-                                                 help="Build one or all commits under project/commits. "
-                                                      "You can choose to build old or new. "
-                                                      "When building old, the corresponding src should be equal to new,"
-                                                      "When building new, the corresponding src should be equal to old. "
-                                                      "Otherwise, we will skip the build of this commit, "
-                                                      "and if --strict is enabled, we will throw an exception."
-                                                      "Take 'new' as example, we will check if the corresponding src "
-                                                      "is equal to old.cpp, and replace it with new.cpp, "
-                                                      "then build the project.")
-    build_commits_parser.add_argument("project", help="Project under list or 'all'")
-    build_commits_parser.add_argument("commit_name", help="Commit name under commits (e.g., 01, 02, 03, ...) "
+    # fast-build
+    fast_build_parser = subparsers.add_parser("fast-build",
+                                                 help="Do not build project, compile src directly to commits/commit_name/fast.o "
+                                                      "according to compile_commands.json.")
+    fast_build_parser.add_argument("project", help="Project under list or 'all'")
+    fast_build_parser.add_argument("commit_name", help="Commit name under commits (e.g., 01, 02, 03, ...) "
                                                         "under project/commits or 'all'")
-    build_commits_parser.add_argument("old_or_new", help="'old' / 'new'")
-    build_commits_parser.add_argument("-j", type=int, help="Parallel jobs")
-    build_commits_parser.add_argument("--re", action="store_true", help="Auto init -> config -> "
-                                                                        "(if new, replace src with old according to commit_name, "
-                                                                        ", else do nothing) -> build -> build commits")
-    build_commits_parser.add_argument("--test", action="store_true", help="Auto test after building")
-    build_commits_parser.add_argument("--strict", action="store_true", help="When check failed, "
-                                                                            "throw an exception instead of skipping")
-    build_commits_parser.add_argument("--fast", action="store_true", help="When fast mode is enabled, "
-                                     "we do not build the src, but compile it directly to commits/commit_name/fast.o "
-                                     "according to compile_commands.json. After compilation, we will backup fast.o to "
-                                     "old.o/new.o and backup fast.o.iclang to old.o.iclang/new.o.iclang. Ignore --test.")
-    build_commits_parser.set_defaults(func=cmd_build_commits)
+    fast_build_parser.add_argument("-j", type=int, help="Parallel jobs")
+    fast_build_parser.add_argument("--iclang", action="store_true", help="Enable IClang, "
+                                                                             "set env ICLANG=(abs)commits/config.json")
+    fast_build_parser.set_defaults(func=cmd_fast_build)
 
     # diff-commits
     diff_parser = subparsers.add_parser("diff-commits",
                                         help="Diff commits, show changed functions, classes, templates. "
-                                             "You should use build-commits fast mode + IClang SourceRangeCheckMode to"
+                                             "You should use fast build and IClang SourceRangeCheckMode to"
                                              "generate old.o.iclang and new.o.iclang first.")
     diff_parser.add_argument("project", help="Project under list or 'all'")
     diff_parser.add_argument("commit_name", help="Commit name under commits (e.g., 01, 02, 03, ...) "
@@ -916,7 +866,7 @@ def main():
     # funcx-sta-commits
     funcx_sta_commits_parser = subparsers.add_parser("funcx-sta-commits",
                                         help="Analyze the upper bound of FuncX. "
-                                             "You should use build-commits fast mode + IClang SourceRangeCheckMode/FuncXCheckMode to"
+                                             "You should use fast build and  IClang SourceRangeCheckMode/FuncXCheckMode to"
                                              "generate new.o.iclang first.")
     funcx_sta_commits_parser.add_argument("project", help="Project under list or 'all'")
     funcx_sta_commits_parser.add_argument("commit_name", help="Commit name under commits (e.g., 01, 02, 03, ...) "
