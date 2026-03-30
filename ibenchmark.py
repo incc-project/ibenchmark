@@ -284,7 +284,7 @@ def new_to_bool(content: str) -> bool:
 class GlobalState:
     def __init__(self):
         self.total_task_num = 0
-        self.skip_task_num = 0
+        self.failed_task_num = 0
         self.gMap: dict[str,  Any] = {}
 
 
@@ -382,7 +382,7 @@ def change_version_project(project_info: ProjectInfo, args: argparse.Namespace):
                 if is_strict:
                     raise ValueError(f"{src_path} != {new_cpp_path}")
                 else:
-                    global_state.skip_task_num += 1
+                    global_state.failed_task_num += 1
                     print(f"{src_path} is already old")
             else:
                 print(f"Replace {src_path} with {old_cpp_path}")
@@ -392,7 +392,7 @@ def change_version_project(project_info: ProjectInfo, args: argparse.Namespace):
                 if is_strict:
                     raise ValueError(f"{src_path} != {old_cpp_path}")
                 else:
-                    global_state.skip_task_num += 1
+                    global_state.failed_task_num += 1
                     print(f"{src_path} is already new")
             else:
                 print(f"Replace {src_path} with {new_cpp_path}")
@@ -400,13 +400,17 @@ def change_version_project(project_info: ProjectInfo, args: argparse.Namespace):
 
 
 def build_project(project_info: ProjectInfo, args: argparse.Namespace):
+    iclang_env = {}
+    if args.iclang:
+        iclang_env["ICLANG"] = os.path.abspath(os.path.join("commits", "config.json"))
+
     make_j = project_info.parallel
     if args.j:
         make_j = args.j
     make_args = "make -j " + str(make_j)
     with cd("build"):
         print(make_args)
-        run_command(shlex.split(make_args))
+        run_command(shlex.split(make_args), iclang_env)
 
 
 def test_project(project_info: ProjectInfo, args: argparse.Namespace):
@@ -515,47 +519,22 @@ def fast_build_project_commits(project_info: ProjectInfo, args: argparse.Namespa
     return
 
 
-def mark_line_info(line_infos: list[str], src_lines: list[str], decl_type: str,
+def mark_line_info(line_infos: list[str], src_lines: list[str], desc: str,
                    start_line: int, start_column: int, end_line: int, end_column: int, src_path: str):
+    # line granularity
     if start_column-1 > 0 and not src_lines[start_line-1][:start_column-1].isspace():
         start_line += 1
     if end_column < len(src_lines[end_line-1]) and not src_lines[end_line-1][end_column:].isspace():
         end_line -= 1
     for i in range(start_line-1, end_line):
         line_info = line_infos[i]
-        if line_info == "other" or (line_info == "class" and "function" in decl_type):
-            line_infos[i] = decl_type
+        if line_info == "other" or (line_info == "class" and "function" in desc):
+            line_infos[i] = desc
         else:
-            raise ValueError(f"Conflict line info in {os.path.abspath(src_path)}: line {i+1}, prev: {line_infos[i]}, cur: {decl_type}")
+            raise ValueError(f"Conflict line info in {os.path.abspath(src_path)}: line {i+1}, prev: {line_infos[i]}, cur: {desc}")
 
 
-def has_invalid_tag(tags: str, invalid_tags: list[str]) -> bool:
-    for elem in invalid_tags:
-        if elem in tags:
-            return True
-        if elem == "all" and tags != "":
-            return True
-    return False
-
-
-def get_directive_name(line: str):
-    s = line.lstrip()
-    if not s.startswith('#'):
-        return ""
-
-    s = s[1:].lstrip()
-
-    name = ''
-    for ch in s:
-        if ch.isalpha():
-            name += ch
-        else:
-            break
-
-    return name if name else ""
-
-
-def get_line_infos(src_path: str, compile_json_path: str, invalid_tags: list[str]) -> list[str]:
+def get_line_infos(src_path: str, compile_json_path: str) -> list[str]:
     with open(src_path, 'r', encoding='utf-8') as f:
         src_lines = f.readlines()
 
@@ -572,33 +551,30 @@ def get_line_infos(src_path: str, compile_json_path: str, invalid_tags: list[str
         end_line = item['endLine']
         end_column = item['endColumn']
         if decl_type == 'function' or decl_type == 'class' or decl_type == 'template':
-            if decl_type == 'function' and item['funcXed'] == True:
-                mark_line_info(line_infos, src_lines, "function-funcx", start_line, start_column, end_line,
-                               end_column, src_path)
-            elif decl_type == 'function' and (item['mangledName'] == "" or has_invalid_tag(item['tags'], invalid_tags)):
-                mark_line_info(line_infos, src_lines, "function-invalid"+item['tags'], start_line, start_column, end_line,
-                               end_column, src_path)
+            if decl_type == 'function':
+                # expand mangled name flag and tags
+                if item['mangledName'] == "":
+                    mark_line_info(line_infos, src_lines, "function"+item["tags"]+"(unmangled)", start_line, start_column, end_line,
+                                   end_column, src_path)
+                else:
+                    mark_line_info(line_infos, src_lines, "function"+item["tags"], start_line, start_column, end_line,
+                                   end_column, src_path)
             else:
                 mark_line_info(line_infos, src_lines, decl_type, start_line, start_column, end_line, end_column,
                                src_path)
         else:
             raise ValueError(f"Invalid decl type: {decl_type}")
 
-    first_main_decl_line = data['firstMainDeclLine']
-
     # Mark space and comment
     for i, content in enumerate(src_lines):
+        if line_infos[i] != "other":
+            continue
         fmt_content = content.strip()
         if fmt_content == "":
             line_infos[i] = "space"
         elif fmt_content[0] == '/':
+            # only support //
             line_infos[i] = "comment"
-
-        directive_name = get_directive_name(fmt_content)
-        if directive_name != "":
-            line_infos[i] = "directive-"+directive_name
-            if i + 1 < first_main_decl_line:
-                line_infos[i] += "-top"
 
     # for i, content in enumerate(line_infos):
     #     print(i+1, content)
@@ -606,14 +582,23 @@ def get_line_infos(src_path: str, compile_json_path: str, invalid_tags: list[str
     return line_infos
 
 
-def diff_project_commit(project_info: ProjectInfo, commit_dir: str):
+def sr_sta_project_commit(project_info: ProjectInfo, commit_dir: str, args: argparse.Namespace):
+    cpp_path = os.path.join(commit_dir, "new.cpp")
+    compile_json_path = os.path.join(commit_dir, "fast.o.iclang", "compile.json")
+    line_infos = get_line_infos(cpp_path, compile_json_path)
+    for info in line_infos:
+        global_state.gMap[info] = global_state.gMap.get(info, 0) + 1
+
+
+def diff_project_commit(project_info: ProjectInfo, commit_dir: str, args: argparse.Namespace):
     old_cpp_path = os.path.join(commit_dir, "old.cpp")
     new_cpp_path = os.path.join(commit_dir, "new.cpp")
     old_compile_json_path = os.path.join(commit_dir, "old.o.iclang", "compile.json")
     new_compile_json_path = os.path.join(commit_dir, "new.o.iclang", "compile.json")
     deleted_lines, added_lines = diff_line_numbers(old_cpp_path, new_cpp_path)
-    old_line_infos = get_line_infos(old_cpp_path, old_compile_json_path, ["special-attr"])
-    new_line_infos = get_line_infos(new_cpp_path, new_compile_json_path, ["special-attr"])
+    old_line_infos = get_line_infos(old_cpp_path, old_compile_json_path)
+    new_line_infos = get_line_infos(new_cpp_path, new_compile_json_path)
+    # key: desc, value[0]: deleted_num, value[1]: added_num
     res: dict[str, tuple[int, int]] = {}
     for line in deleted_lines:
         key = old_line_infos[line - 1]
@@ -624,27 +609,16 @@ def diff_project_commit(project_info: ProjectInfo, commit_dir: str):
         old = res.get(key, (0, 0))
         res[key] = (old[0], old[1] + 1)
     global_state.gMap[os.path.abspath(commit_dir)] = res
-    return True
-
-
-def diff_project_commits(project_info: ProjectInfo, args: argparse.Namespace):
-    if args.commit_name == "all":
-        for commit_name in sorted(os.listdir("commits")):
-            commit_dir = os.path.join("commits", commit_name)
-            if os.path.isdir(commit_dir):
-                diff_project_commit(project_info, commit_dir)
-    else:
-        diff_project_commit(project_info, os.path.join("commits", args.commit_name))
 
 
 def funcx_sta_commit(project_info: ProjectInfo, commit_dir: str):
     new_cpp_path = os.path.join(commit_dir, "new.cpp")
-    new_compile_json_path = os.path.join(commit_dir, "new.o.iclang", "compile.json")
-    new_line_infos = get_line_infos(new_cpp_path, new_compile_json_path, ["all"])
-    res: dict[str, int] = {}
-    for line_info in new_line_infos:
-        res[line_info] = res.get(line_info, 0) + 1
-    global_state.gMap[os.path.abspath(commit_dir)] = res
+    # new_compile_json_path = os.path.join(commit_dir, "new.o.iclang", "compile.json")
+    # new_line_infos = get_line_infos(new_cpp_path, new_compile_json_path, ["all"])
+    # res: dict[str, int] = {}
+    # for line_info in new_line_infos:
+    #     res[line_info] = res.get(line_info, 0) + 1
+    # global_state.gMap[os.path.abspath(commit_dir)] = res
 
 
 def funcx_sta_commits(project_info: ProjectInfo, args: argparse.Namespace):
@@ -662,21 +636,47 @@ def funcx_sta_commits(project_info: ProjectInfo, args: argparse.Namespace):
 
 # ==================== Cmd Broadcast Begin ====================
 
+def handle_project_commit(project_name: str, handle_funcs: list[Callable[[ProjectInfo, str, argparse.Namespace], None]],
+                   args: argparse.Namespace):
+    project_list = []
+    if project_name == "all":
+        for info in project_infos.values():
+            project_list.append(info)
+    else:
+        if project_name not in project_infos:
+            raise ValueError(f"Error: project '{project_name}' not found in ibenchmark")
+        project_list.append(project_infos[project_name])
+
+    for info in project_list:
+        with cd(info.name):
+            commit_list = []
+            if args.commit_name == "all":
+                for commit_name in sorted(os.listdir("commits")):
+                    commit_dir = os.path.join("commits", commit_name)
+                    if os.path.isdir(commit_dir):
+                        commit_list.append(commit_dir)
+            else:
+                commit_list.append(os.path.join("commits", args.commit_name))
+            for commit_dir in commit_list:
+                for handle_func in handle_funcs:
+                    handle_func(info, commit_dir, args)
+
 
 def handle_project(project_name: str, handle_funcs: list[Callable[[ProjectInfo, argparse.Namespace], None]],
                    args: argparse.Namespace):
+    project_list = []
     if project_name == "all":
         for info in project_infos.values():
-            with cd(info.name):
-                for handle_func in handle_funcs:
-                    handle_func(info, args)
-        return
-    if project_name not in project_infos:
-        raise ValueError(f"Error: project '{project_name}' not found in ibenchmark")
-    with cd(project_name):
-        info = project_infos[project_name]
-        for handle_func in handle_funcs:
-            handle_func(info, args)
+            project_list.append(info)
+    else:
+        if project_name not in project_infos:
+            raise ValueError(f"Error: project '{project_name}' not found in ibenchmark")
+        project_list.append(project_infos[project_name])
+
+    for info in project_list:
+        with cd(info.name):
+            for handle_func in handle_funcs:
+                handle_func(info, args)
 
 
 # ==================== Cmd Broadcast End ====================
@@ -708,7 +708,7 @@ def cmd_iclang_init(args):
 def cmd_change_version(args):
     handle_project(args.project, [change_version_project], args)
     print("Total commits num:", global_state.total_task_num)
-    print("Skip commits num:", global_state.skip_task_num)
+    print("Skip commits num:", global_state.failed_task_num)
 
 
 @timeit
@@ -727,31 +727,46 @@ def cmd_fast_build(args):
 
 
 @timeit
+def cmd_sr_sta(args):
+    handle_project_commit(args.project, [sr_sta_project_commit], args)
+    total_num = 0
+    for num in global_state.gMap.values():
+        total_num += num
+    print(f"[total] {total_num}")
+    for desc, num in global_state.gMap.items():
+        print(f"[{desc}] {num} ({1.0*num / total_num})")
+
+
+@timeit
 def cmd_diff_commits(args):
-    handle_project(args.project, [diff_project_commits], args)
-    res: dict[str, int] = {}
+    handle_project_commit(args.project, [diff_project_commit], args)
+    # desc, (deleted num, added num, commit num)
+    res: dict[str, tuple[int, int, int]] = {}
     valid_num = 0
     for prefix, diff_map in global_state.gMap.items():
-
         print(prefix, end="")
+        is_valid = True
         for key, value in diff_map.items():
-            print(f" ({key} change: -{value[0]}, +{value[1]})", end="")
+            print(f" [{key}: -{value[0]}, +{value[1]}]", end="")
+            old = res.get(key, (0, 0, 0))
+            res[key] = (old[0] + value[0], old[1] + value[1], old[2] + 1)
+
+            if not(key == "space" or ("function" in key and "unmangled" not in key and
+                                      "auto" not in key and "constexpr" not in key and
+                                      "special-attr" not in key and
+                                      "default" not in key and
+                                      "deleted" not in key and
+                                      "invalid-compound-stmt" not in key)):
+                is_valid = False
         print()
-
-        valid_flag = True
-        for decl_type in diff_map.keys():
-            res[decl_type] = res.get(decl_type, 0) + 1
-
-            if decl_type != "function" and decl_type != "space" and decl_type != "comment":
-                valid_flag = False
-        if valid_flag:
+        if is_valid:
             valid_num += 1
+
 
     print("==================== Summary ====================")
     for key, value in res.items():
-        print(f"{key} change: {value} commits")
-
-    print(f"Valid: {valid_num} commits")
+        print(f"[{key}] -:{value[0]}, +:{value[1]}, commits:{value[2]}")
+    print(f"Valid commits: {valid_num}")
     print("========================================")
 
 
@@ -853,11 +868,18 @@ def main():
                                                                              "set env ICLANG=(abs)commits/config.json")
     fast_build_parser.set_defaults(func=cmd_fast_build)
 
+    # source range statistic
+    sr_sta_parser = subparsers.add_parser("sr-sta",
+                                        help="Source range statistic. You should run ./sr_sta_init.sh first.")
+    sr_sta_parser.add_argument("project", help="Project under list or 'all'")
+    sr_sta_parser.add_argument("commit_name", help="Commit name under commits (e.g., 01, 02, 03, ...) "
+                                                 "under project/commits or 'all'")
+    sr_sta_parser.set_defaults(func=cmd_sr_sta)
+
     # diff-commits
     diff_parser = subparsers.add_parser("diff-commits",
                                         help="Diff commits, show changed functions, classes, templates. "
-                                             "You should use fast build and IClang SourceRangeCheckMode to"
-                                             "generate old.o.iclang and new.o.iclang first.")
+                                             "You should run ./diff-init.sh first.")
     diff_parser.add_argument("project", help="Project under list or 'all'")
     diff_parser.add_argument("commit_name", help="Commit name under commits (e.g., 01, 02, 03, ...) "
                                                           "under project/commits or 'all'")

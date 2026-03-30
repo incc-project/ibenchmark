@@ -31,8 +31,8 @@ namespace Catch {
     }
 #endif //!defined(CATCH_CONFIG_DISABLE_EXCEPTIONS)
 
-
-    ExceptionTranslatorRegistry::~ExceptionTranslatorRegistry() = default;
+    ExceptionTranslatorRegistry::~ExceptionTranslatorRegistry() {
+    }
 
     void ExceptionTranslatorRegistry::registerTranslator( Detail::unique_ptr<IExceptionTranslator>&& translator ) {
         m_translators.push_back( CATCH_MOVE( translator ) );

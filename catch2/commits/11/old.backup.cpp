@@ -39,8 +39,7 @@ namespace Catch {
             return parsed;
         }
 
-
-        EnumInfo::~EnumInfo() = default;
+        EnumInfo::~EnumInfo() {}
 
         StringRef EnumInfo::lookup( int value ) const {
             for( auto const& valueToName : m_values ) {

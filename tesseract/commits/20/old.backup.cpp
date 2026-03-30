@@ -176,4 +176,4 @@ TEST(ValidateGraphemeTest, NoLonelyJoinersQuote) {
   EXPECT_EQ(glyphs[4], std::string("'"));
 }
 
-} // namespace tesseract
+}  // namespace tesseract

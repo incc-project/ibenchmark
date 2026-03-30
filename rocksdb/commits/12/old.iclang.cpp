@@ -472,14 +472,7 @@ bool PointLockManager::IncrementWaiters(
 // Try to lock this key after we have acquired the mutex.
 // Sets *expire_time to the expiration time in microseconds
 //  or 0 if no expiration.
-//
-// Returns Status::TimeOut if the lock cannot be acquired due to it being
-// held by other transactions, `txn_ids` will be populated with the id of
-// transactions that hold the lock, excluding lock_info.txn_ids[0].
-// Returns Status::Busy if the lock cannot be acquired due to reaching
-// per CF limit on the number of locks.
-//
-// REQUIRED:  Stripe mutex must be held. txn_ids must be empty.
+// REQUIRED:  Stripe mutex must be held.
 Status PointLockManager::AcquireLocked(LockMap* lock_map, LockMapStripe* stripe,
                                        const std::string& key, Env* env,
                                        const LockInfo& txn_lock_info,

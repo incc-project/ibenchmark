@@ -228,4 +228,4 @@ TEST(ValidateIndicTest, SinhalaSpecials) {
   EXPECT_EQ(glyphs[3], std::string("\u0dcf"));
 }
 
-} // namespace tesseract
+}  // namespace tesseract

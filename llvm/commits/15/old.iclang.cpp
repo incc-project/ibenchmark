@@ -4200,7 +4200,7 @@ static OverloadingResult ResolveConstructorOverload(
 /// \param IsListInit     Is this list-initialization?
 /// \param IsInitListCopy Is this non-list-initialization resulting from a
 ///                       list-initialization from {x} where x is the same
-///                       type as the entity?
+///                       aggregate type as the entity?
 static void TryConstructorInitialization(Sema &S,
                                          const InitializedEntity &Entity,
                                          const InitializationKind &Kind,

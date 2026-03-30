@@ -484,11 +484,11 @@ static bool IsAlpha(char c) {
 
 static bool IsDigit(char c) { return c >= '0' && c <= '9'; }
 
-
-
-
-
-
+// Returns true if "str" is a function clone suffix.  These suffixes are used
+// by GCC 4.5.x and later versions (and our locally-modified version of GCC
+// 4.4.x) to indicate functions which have been cloned during optimization.
+// We treat any sequence (.<alpha>+.<digit>+)+ as a function clone suffix.
+// Additionally, '_' is allowed along with the alphanumeric sequence.
 static bool IsFunctionCloneSuffix(const char *str) {
   size_t i = 0;
   while (str[i] != '\0') {
