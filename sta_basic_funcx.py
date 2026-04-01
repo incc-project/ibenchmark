@@ -6,6 +6,10 @@ base_dir = "."
 
 rows = []
 
+pch_acc_sum = 0.0
+funcx_acc_sum = 0.0
+total_num = 0
+
 # 按字典序遍历项目目录
 for project in sorted(os.listdir(base_dir)):
     project_path = os.path.join(base_dir, project)
@@ -36,13 +40,27 @@ for project in sorted(os.listdir(base_dir)):
             with open(json_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
 
+            originalTimeMs = data.get("originalTimeMs")
+            makePCHTimeMs = data.get("makePCHTimeMs")
+            if makePCHTimeMs == 0:
+                makePCHTimeMs = originalTimeMs
+            pchTimeMs = data.get("pchTimeMs")
+            if pchTimeMs == 0:
+                pchTimeMs = originalTimeMs
+            pchFuncXTimeMs = data.get("pchFuncXTimeMs")
+            if pchFuncXTimeMs == 0:
+                pchFuncXTimeMs = originalTimeMs
+            pch_acc_sum += 1.0 * originalTimeMs / pchTimeMs
+            funcx_acc_sum += 1.0 * originalTimeMs / pchFuncXTimeMs
+            total_num += 1
+
             rows.append({
                 "项目名": project,
                 "commit文件名": commit,
-                "originalTimeMs": data.get("originalTimeMs"),
-                "makePCHTimeMs": data.get("makePCHTimeMs"),
-                "pchTimeMs": data.get("pchTimeMs"),
-                "pchFuncXTimeMs": data.get("pchFuncXTimeMs"),
+                "originalTimeMs": originalTimeMs,
+                "makePCHTimeMs": makePCHTimeMs,
+                "pchTimeMs": pchTimeMs,
+                "pchFuncXTimeMs": pchFuncXTimeMs,
             })
 
         except Exception as e:
@@ -60,3 +78,6 @@ df = pd.DataFrame(rows, columns=[
 df.to_excel("output.xlsx", index=False)
 
 print("统计完成，已保存为 output.xlsx")
+print(f"pch_acc: {pch_acc_sum / total_num}")
+print(f"funcx_acc: {funcx_acc_sum / total_num}")
+print(f"funcx_pch_acc: {funcx_acc_sum / pch_acc_sum}")

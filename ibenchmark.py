@@ -611,26 +611,6 @@ def diff_project_commit(project_info: ProjectInfo, commit_dir: str, args: argpar
     global_state.gMap[os.path.abspath(commit_dir)] = res
 
 
-def funcx_sta_commit(project_info: ProjectInfo, commit_dir: str):
-    new_cpp_path = os.path.join(commit_dir, "new.cpp")
-    # new_compile_json_path = os.path.join(commit_dir, "new.o.iclang", "compile.json")
-    # new_line_infos = get_line_infos(new_cpp_path, new_compile_json_path, ["all"])
-    # res: dict[str, int] = {}
-    # for line_info in new_line_infos:
-    #     res[line_info] = res.get(line_info, 0) + 1
-    # global_state.gMap[os.path.abspath(commit_dir)] = res
-
-
-def funcx_sta_commits(project_info: ProjectInfo, args: argparse.Namespace):
-    if args.commit_name == "all":
-        for commit_name in sorted(os.listdir("commits")):
-            commit_dir = os.path.join("commits", commit_name)
-            if os.path.isdir(commit_dir):
-                funcx_sta_commit(project_info, commit_dir)
-    else:
-        funcx_sta_commit(project_info, os.path.join("commits", args.commit_name))
-
-
 # ==================== Cmd Internal End ====================
 
 
@@ -770,30 +750,6 @@ def cmd_diff_commits(args):
     print("========================================")
 
 
-@timeit
-def cmd_funcx_sta_commits(args):
-    handle_project(args.project, [funcx_sta_commits], args)
-    res: dict[str, int] = {}
-    total_lines = 0
-    for prefix, sta_map in global_state.gMap.items():
-
-        cur_total_lines = 0
-        for value in sta_map.values():
-            cur_total_lines += value
-        total_lines += cur_total_lines
-
-        print(prefix, f"total lines: {cur_total_lines}", end="")
-        for key, value in sta_map.items():
-            print(f" ({key}: {value}, {100.0*value/cur_total_lines:.1f}%)", end="")
-            res[key] = res.get(key, 0) + value
-        print()
-
-    print("==================== Summary ====================")
-    print(f"total lines: {total_lines}")
-    for key, value in res.items():
-        print(f"{key}: {value}, {100.0*value/total_lines:.1f}%")
-    print("========================================")
-
 # ==================== Cmd End ====================
 
 
@@ -870,7 +826,7 @@ def main():
 
     # source range statistic
     sr_sta_parser = subparsers.add_parser("sr-sta",
-                                        help="Source range statistic. You should run ./sr_sta_init.sh first.")
+                                        help="Source range statistic. You should run ./init_sr_sta.sh first.")
     sr_sta_parser.add_argument("project", help="Project under list or 'all'")
     sr_sta_parser.add_argument("commit_name", help="Commit name under commits (e.g., 01, 02, 03, ...) "
                                                  "under project/commits or 'all'")
@@ -879,21 +835,11 @@ def main():
     # diff-commits
     diff_parser = subparsers.add_parser("diff-commits",
                                         help="Diff commits, show changed functions, classes, templates. "
-                                             "You should run ./diff-init.sh first.")
+                                             "You should run ./init_diff.sh first.")
     diff_parser.add_argument("project", help="Project under list or 'all'")
     diff_parser.add_argument("commit_name", help="Commit name under commits (e.g., 01, 02, 03, ...) "
                                                           "under project/commits or 'all'")
     diff_parser.set_defaults(func=cmd_diff_commits)
-
-    # funcx-sta-commits
-    funcx_sta_commits_parser = subparsers.add_parser("funcx-sta-commits",
-                                        help="Analyze the upper bound of FuncX. "
-                                             "You should use fast build and  IClang SourceRangeCheckMode/FuncXCheckMode to"
-                                             "generate new.o.iclang first.")
-    funcx_sta_commits_parser.add_argument("project", help="Project under list or 'all'")
-    funcx_sta_commits_parser.add_argument("commit_name", help="Commit name under commits (e.g., 01, 02, 03, ...) "
-                                                 "under project/commits or 'all'")
-    funcx_sta_commits_parser.set_defaults(func=cmd_funcx_sta_commits)
 
     args = parser.parse_args()
 
